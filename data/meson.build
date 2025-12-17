@@ -1,6 +1,6 @@
 desktop_file = i18n.merge_file(
-  input: 'com.github.hezral.hello.desktop.in',
-  output: 'com.github.hezral.hello.desktop',
+  input: 'com.github.hezral.whis.desktop.in',
+  output: 'com.github.hezral.whis.desktop',
   type: 'desktop',
   po_dir: '../po',
   install: true,
@@ -15,8 +15,8 @@ if desktop_utils.found()
 endif
 
 appstream_file = i18n.merge_file(
-  input: 'com.github.hezral.hello.appdata.xml.in',
-  output: 'com.github.hezral.hello.appdata.xml',
+  input: 'com.github.hezral.whis.appdata.xml.in',
+  output: 'com.github.hezral.whis.appdata.xml',
   po_dir: '../po',
   install: true,
   install_dir: join_paths(get_option('datadir'), 'metainfo')
@@ -29,7 +29,7 @@ if appstream_util.found()
   )
 endif
 
-install_data('com.github.hezral.hello.gschema.xml',
+install_data('com.github.hezral.whis.gschema.xml',
   install_dir: join_paths(get_option('datadir'), 'glib-2.0/schemas')
 )
 
@@ -40,19 +40,10 @@ if compile_schemas.found()
   )
 endif
 
-# icon_sizes = ['16', '24', '32', '48', '64', '128']
-# foreach i : icon_sizes
-#     install_data(
-#         join_paths('icons', i + '.svg'),
-#         rename: meson.project_name() + '.svg',
-#         install_dir: join_paths(get_option ('datadir'), 'icons', 'hicolor', i + 'x' + i, 'apps')
-#     )
-#     install_data(
-#         join_paths('icons', i + '.svg'),
-#         rename: meson.project_name() + '.svg',
-#         install_dir: join_paths(get_option ('datadir'), 'icons', 'hicolor', i + 'x' + i + '@2', 'apps')
-#     )
-# endforeach
+install_data(
+    'com.github.hezral.whis.svg',
+    install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps')
+)
 
 install_data('application.css',
   install_dir: join_paths(pkgdatadir, project_short_name, 'data')

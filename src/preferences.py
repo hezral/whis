@@ -1,0 +1,172 @@
+import gi
+gi.require_version('Gtk', '4.0')
+from gi.repository import Gtk
+
+from .config_manager import ConfigManager
+
+class PreferencesWindow(Gtk.Window):
+    def __init__(self, parent):
+        super().__init__(transient_for=parent)
+        self.set_title("Preferences")
+        self.set_modal(True)
+        self.set_default_size(500, 600)
+        
+        self.config_manager = ConfigManager()
+        full_config = self.config_manager.get_config()
+        self.tx_config = full_config.get("transcription", {})
+        self.rec_config = full_config.get("recording", {})
+        self.inj_config = full_config.get("injection", {})
+        self.notif_config = full_config.get("notifications", {})
+
+        # Main scroller
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.set_child(scrolled)
+
+        # Content Box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        scrolled.set_child(main_box)
+
+        # --- Transcription Section ---
+        tx_frame = Gtk.Frame(label="Transcription")
+        tx_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        tx_box.set_margin_top(10)
+        tx_box.set_margin_bottom(10)
+        tx_box.set_margin_start(10)
+        tx_box.set_margin_end(10)
+        tx_frame.set_child(tx_box)
+        main_box.append(tx_frame)
+
+        # Provider
+        tx_box.append(Gtk.Label(label="Provider", xalign=0))
+        self.provider_entry = Gtk.DropDown.new_from_strings(["openai", "groq-transcription", "groq-translation"])
+        current_provider = self.tx_config.get("provider", "openai")
+        if current_provider == "openai":
+            self.provider_entry.set_selected(0)
+        elif current_provider == "groq-transcription":
+            self.provider_entry.set_selected(1)
+        elif current_provider == "groq-translation":
+            self.provider_entry.set_selected(2)
+        tx_box.append(self.provider_entry)
+
+        # API Key
+        tx_box.append(Gtk.Label(label="API Key", xalign=0))
+        self.api_key_entry = Gtk.Entry()
+        self.api_key_entry.set_text(self.tx_config.get("api_key", ""))
+        self.api_key_entry.set_visibility(False)
+        self.api_key_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, "view-reveal-symbolic")
+        self.api_key_entry.connect("icon-press", self.toggle_password_visibility)
+        tx_box.append(self.api_key_entry)
+
+        # Language
+        tx_box.append(Gtk.Label(label="Language (empty for auto)", xalign=0))
+        self.language_entry = Gtk.Entry()
+        self.language_entry.set_text(self.tx_config.get("language", ""))
+        tx_box.append(self.language_entry)
+
+        # Model
+        tx_box.append(Gtk.Label(label="Model", xalign=0))
+        self.model_entry = Gtk.Entry()
+        self.model_entry.set_text(self.tx_config.get("model", "whisper-1"))
+        tx_box.append(self.model_entry)
+
+        # --- Recording Section ---
+        rec_frame = Gtk.Frame(label="Recording")
+        rec_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        rec_box.set_margin_top(10)
+        rec_box.set_margin_bottom(10)
+        rec_box.set_margin_start(10)
+        rec_box.set_margin_end(10)
+        rec_frame.set_child(rec_box)
+        main_box.append(rec_frame)
+
+        rec_box.append(Gtk.Label(label="Timeout (e.g. 5m, 30s)", xalign=0))
+        self.timeout_entry = Gtk.Entry()
+        self.timeout_entry.set_text(self.rec_config.get("timeout", "5m"))
+        rec_box.append(self.timeout_entry)
+
+        # --- Injection Section ---
+        inj_frame = Gtk.Frame(label="Text Injection")
+        inj_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        inj_box.set_margin_top(10)
+        inj_box.set_margin_bottom(10)
+        inj_box.set_margin_start(10)
+        inj_box.set_margin_end(10)
+        inj_frame.set_child(inj_box)
+        main_box.append(inj_frame)
+
+        inj_box.append(Gtk.Label(label="Mode", xalign=0))
+        self.mode_entry = Gtk.DropDown.new_from_strings(["fallback", "clipboard", "type"])
+        current_mode = self.inj_config.get("mode", "fallback")
+        if current_mode == "fallback":
+            self.mode_entry.set_selected(0)
+        elif current_mode == "clipboard":
+            self.mode_entry.set_selected(1)
+        elif current_mode == "type":
+            self.mode_entry.set_selected(2)
+        inj_box.append(self.mode_entry)
+
+        self.restore_clipboard_switch = Gtk.CheckButton(label="Restore Clipboard after injection")
+        self.restore_clipboard_switch.set_active(self.inj_config.get("restore_clipboard", True))
+        inj_box.append(self.restore_clipboard_switch)
+
+        # --- Notifications Section ---
+        notif_frame = Gtk.Frame(label="Notifications")
+        notif_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        notif_box.set_margin_top(10)
+        notif_box.set_margin_bottom(10)
+        notif_box.set_margin_start(10)
+        notif_box.set_margin_end(10)
+        notif_frame.set_child(notif_box)
+        main_box.append(notif_frame)
+
+        self.notifications_switch = Gtk.CheckButton(label="Enable Desktop Notifications")
+        self.notifications_switch.set_active(self.notif_config.get("enabled", True))
+        notif_box.append(self.notifications_switch)
+
+        # --- Save Button ---
+        save_btn = Gtk.Button(label="Save Preferences")
+        save_btn.add_css_class("suggested-action")
+        save_btn.set_margin_top(10)
+        save_btn.connect("clicked", self.on_save_clicked)
+        main_box.append(save_btn)
+
+    def toggle_password_visibility(self, entry, icon_pos, event):
+        entry.set_visibility(not entry.get_visibility())
+
+    def on_save_clicked(self, btn):
+        updates = {}
+
+        # Transcription
+        providers = ["openai", "groq-transcription", "groq-translation"]
+        updates["transcription"] = {
+            "provider": providers[self.provider_entry.get_selected()],
+            "api_key": self.api_key_entry.get_text(),
+            "language": self.language_entry.get_text(),
+            "model": self.model_entry.get_text()
+        }
+
+        # Recording
+        updates["recording"] = {
+            "timeout": self.timeout_entry.get_text()
+        }
+
+        # Injection
+        modes = ["fallback", "clipboard", "type"]
+        updates["injection"] = {
+            "mode": modes[self.mode_entry.get_selected()],
+            "restore_clipboard": self.restore_clipboard_switch.get_active()
+        }
+
+        # Notifications
+        updates["notifications"] = {
+            "enabled": self.notifications_switch.get_active()
+        }
+        
+        self.config_manager.save_config(updates)
+        self.close()

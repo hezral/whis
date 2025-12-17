@@ -1,0 +1,54 @@
+app-id: com.github.hezral.whis
+runtime: io.elementary.Platform
+runtime-version: '8.2'
+sdk: io.elementary.Sdk
+command: com.github.hezral.whis
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=network
+  - --device=dri # GPU/DRI access 
+  - --env=LIBGL_ALWAYS_SOFTWARE=1 #force software rendering if GPU fails
+  - --env=GTK_IM_MODULE=gtk-im-context-simple
+  - --socket=pulseaudio
+  - --talk-name=org.freedesktop.IBus
+  - --filesystem=xdg-run/pipewire-0
+
+modules:
+  - name: wl-clipboard
+    buildsystem: meson
+    build-options:
+      config-opts:
+      - '-Dfishcompletiondir=no'
+    sources:
+      - type: git
+        url: https://github.com/bugaevc/wl-clipboard.git
+  
+  - name: wtype
+    buildsystem: meson
+    sources:
+      - type: git
+        url: https://github.com/atx/wtype.git
+
+  - name: hyprvoice
+    buildsystem: simple
+    build-options:
+      env:
+        GOBIN: /app/bin
+        GOCACHE: /tmp/go-cache
+        GOMODCACHE: /tmp/go-mod-cache
+      build-args:
+        - --share=network
+    sources:
+      - type: git
+        url: https://github.com/LeonardoTrapani/hyprvoice.git
+        branch: main
+    build-commands:
+      - . /usr/lib/sdk/golang/enable.sh && go mod download
+      - . /usr/lib/sdk/golang/enable.sh && go build -o /app/bin/hyprvoice ./cmd/hyprvoice
+
+  - name: whis
+    buildsystem: meson
+    sources:
+      - type: dir
+        path: .

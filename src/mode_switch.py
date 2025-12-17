@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2021 Adi Hezral <hezral@gmail.com>
+# SPDX-FileCopyrightText: 2025 Adi Hezral <hezral@gmail.com>
 
 import gi
 
-gi.require_version('Gtk', '3.0')
-gi.require_version('Gdk', '3.0')
+gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GObject, Gdk
 
 class ModeSwitch(Gtk.Grid):
@@ -18,8 +17,8 @@ class ModeSwitch(Gtk.Grid):
     """
     
     css_provider = Gtk.CssProvider()
-    css_provider.load_from_data(CSS.encode())
-    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    css_provider.load_from_data(CSS.encode(), len(CSS.encode()))
+    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     
     active = GObject.Property(type=bool, default=True)
     
@@ -33,19 +32,26 @@ class ModeSwitch(Gtk.Grid):
         self.secondary_widget_callback = secondary_widget_callback
         
         if self.primary_widget is not None:
-            self.primary_widget.connect("button-release-event", self.on_primary_widget_pressed)
+            # Gtk4 event handling
+            ctrl = Gtk.GestureClick()
+            ctrl.connect("released", self.on_primary_widget_pressed)
+            self.primary_widget.add_controller(ctrl)
+            
             self.primary_widget.props.valign = Gtk.Align.CENTER
             self.primary_widget.props.halign = Gtk.Align.END
             self.attach(self.primary_widget, 0, 0, 1, 1)
 
         if self.secondary_widget is not None:
-            self.secondary_widget.connect("button-release-event", self.on_secondary_widget_pressed)
+            ctrl = Gtk.GestureClick()
+            ctrl.connect("released", self.on_secondary_widget_pressed)
+            self.secondary_widget.add_controller(ctrl)
+            
             self.secondary_widget.props.valign = Gtk.Align.CENTER
             self.secondary_widget.props.halign = Gtk.Align.START
             self.attach(self.secondary_widget, 2, 0, 1, 1)
     
         self.switch = Gtk.Switch()
-        self.switch.get_style_context().add_class("modeswitch")
+        self.switch.add_css_class("modeswitch")
         self.switch.props.can_focus = False
         self.switch.props.valign = Gtk.Align.CENTER
         self.switch.props.margin_top = 1
@@ -54,16 +60,14 @@ class ModeSwitch(Gtk.Grid):
 
         self.props.column_spacing = 6
         self.props.margin_top = 6
-        self.props.margin_right = 6
+        self.props.margin_end = 6 # margin_right is deprecated/removed in Gtk4 favor of margin_end
 
-    def on_primary_widget_pressed(self, *args):
+    def on_primary_widget_pressed(self, gesture, n_press, x, y):
         self.active = False
         if self.primary_widget_callback is not None:
             self.primary_widget_callback()
-        return Gdk.EVENT_STOP
 
-    def on_secondary_widget_pressed(self, *args):
+    def on_secondary_widget_pressed(self, gesture, n_press, x, y):
         self.active = True
         if self.secondary_widget_callback is not None:
             self.secondary_widget_callback()
-        return Gdk.EVENT_STOP

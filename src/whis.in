@@ -1,8 +1,8 @@
 #!@PYTHON@
 
-# hello.in
+# whis.in
 #
-# Copyright 2021 Adi Hezral
+# Copyright 2025 Adi Hezral
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,9 +28,9 @@ localedir = '@localedir@'
 
 sys.path.insert(1, pkgdatadir)
 signal.signal(signal.SIGINT, signal.SIG_DFL)
-gettext.install('hello', localedir)
+gettext.install('whis', localedir)
 
 if __name__ == '__main__':
 
-    from hello import main
+    from whis import main
     sys.exit(main.main(VERSION))

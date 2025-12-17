@@ -1,6 +1,6 @@
-data/com.github.hezral.hello.desktop.in
-data/com.github.hezral.hello.appdata.xml.in
-data/com.github.hezral.hello.gschema.xml
+data/com.github.hezral.whis.desktop.in
+data/com.github.hezral.whis.appdata.xml.in
+data/com.github.hezral.whis.gschema.xml
 src/main.py
 src/window.py
 
