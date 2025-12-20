@@ -41,7 +41,7 @@ if compile_schemas.found()
 endif
 
 install_data(
-    'com.github.hezral.whis.svg',
+    'com.github.hezral.whis.png',
     install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps')
 )
 
