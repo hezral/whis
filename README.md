@@ -3,8 +3,11 @@ Ensure you have these dependencies installed
 
 * python3
 * python3-gi
-* libgranite-dev
-* 
+* libgranite-7-dev
+* wl-clipboard
+* wtype
+* hyprvoice https://github.com/leonardotrapani/hyprvoice (requires golang to compile)
+
 
 Download the updated source [here](https://github.com/hezral/whis/archive/master.zip), or use git:
 ```bash
