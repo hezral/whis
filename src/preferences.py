@@ -129,12 +129,97 @@ class PreferencesWindow(Gtk.Window):
         self.notifications_switch.set_active(self.notif_config.get("enabled", True))
         notif_box.append(self.notifications_switch)
 
+        # --- Daemon Management Section ---
+        daemon_frame = Gtk.Frame(label="Daemon Management")
+        daemon_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        daemon_box.set_margin_top(10)
+        daemon_box.set_margin_bottom(10)
+        daemon_box.set_margin_start(10)
+        daemon_box.set_margin_end(10)
+        daemon_frame.set_child(daemon_box)
+        main_box.append(daemon_frame)
+
+        grid = Gtk.Grid(column_spacing=10, row_spacing=10)
+        grid.set_halign(Gtk.Align.CENTER)
+        daemon_box.append(grid)
+
+        btn_start = Gtk.Button(label="Start Service")
+        btn_start.connect("clicked", self.on_start_clicked)
+        grid.attach(btn_start, 0, 0, 1, 1)
+
+        btn_stop = Gtk.Button(label="Stop Service")
+        btn_stop.connect("clicked", self.on_stop_clicked)
+        grid.attach(btn_stop, 1, 0, 1, 1)
+
+        btn_status = Gtk.Button(label="Check Status")
+        btn_status.connect("clicked", self.on_status_clicked)
+        grid.attach(btn_status, 0, 1, 1, 1)
+
+        btn_version = Gtk.Button(label="Version")
+        btn_version.connect("clicked", self.on_version_clicked)
+        grid.attach(btn_version, 1, 1, 1, 1)
+
+        # Output area
+        scrolled_out = Gtk.ScrolledWindow()
+        scrolled_out.set_min_content_height(150)
+        scrolled_out.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        
+        self.output_view = Gtk.TextView()
+        self.output_view.set_editable(False)
+        self.output_view.set_monospace(True)
+        self.output_view.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.output_buffer = self.output_view.get_buffer()
+        scrolled_out.set_child(self.output_view)
+
+        frame_out = Gtk.Frame()
+        frame_out.set_child(scrolled_out)
+        daemon_box.append(frame_out)
+
         # --- Save Button ---
         save_btn = Gtk.Button(label="Save Preferences")
         save_btn.add_css_class("suggested-action")
         save_btn.set_margin_top(10)
         save_btn.connect("clicked", self.on_save_clicked)
         main_box.append(save_btn)
+
+    def append_output(self, text):
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        end_iter = self.output_buffer.get_end_iter()
+        self.output_buffer.insert(end_iter, f"[{timestamp}] {text}\n")
+        mark = self.output_buffer.create_mark(None, end_iter, False)
+        self.output_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+
+    def run_command(self, command):
+        import subprocess
+        self.append_output(f"> {' '.join(command)}")
+        try:
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.stdout:
+                self.append_output(result.stdout.strip())
+            if result.stderr:
+                self.append_output(f"Error: {result.stderr.strip()}")
+        except Exception as e:
+            self.append_output(f"Execution failed: {e}")
+
+    def on_start_clicked(self, btn):
+        self.append_output("Starting hyprvoice daemon...")
+        try:
+            # Re-use Application.start_daemon if possible
+            app = self.get_transient_for().app
+            app.start_daemon()
+            self.append_output("Daemon start command issued.")
+        except Exception as e:
+            self.append_output(f"Failed to start: {e}")
+
+    def on_stop_clicked(self, btn):
+        self.run_command(["hyprvoice", "stop"])
+
+    def on_status_clicked(self, btn):
+        self.run_command(["hyprvoice", "status"])
+
+    def on_version_clicked(self, btn):
+        self.run_command(["hyprvoice", "version"])
 
     def toggle_password_visibility(self, entry, icon_pos, event):
         entry.set_visibility(not entry.get_visibility())

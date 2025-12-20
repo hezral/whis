@@ -26,7 +26,7 @@ logging.basicConfig(
 gi.require_version('Gtk', '4.0')
 gi.require_version('Granite', '7.0')
 gi.require_version('Gst', '1.0')
-from gi.repository import Gtk, Gio, Granite, Gdk, GLib
+from gi.repository import Gtk, Gio, Granite, Gdk, GLib, Gst
 
 from .window import whisWindow
 
@@ -77,6 +77,7 @@ class Application(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        Gst.init(None)
         
         # Keep application alive even when window is closed
         self.hold()

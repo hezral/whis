@@ -13,6 +13,8 @@ project_domain = '.'.join([rdnn[0],rdnn[1],rdnn[2]])
 project_short_name = rdnn[3]
 moduledir = join_paths(pkgdatadir, project_short_name)
 
+install_subdir('assets', install_dir: pkgdatadir)
+
 subdir('data')
 subdir('src')
 subdir('po')

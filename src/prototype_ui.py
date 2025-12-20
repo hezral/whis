@@ -58,10 +58,6 @@ class SoundWavePrototype(Gtk.Application):
                 color: white;
                 background-color: rgba(255, 255, 255, 0.1);
             }
-            .top-quit {
-                margin-top: 3px;
-                margin-left: 3px;
-            }
         """)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(),
@@ -88,55 +84,56 @@ class SoundWavePrototype(Gtk.Application):
         self.revealer.set_transition_duration(300)
 
         # Button Box
-        self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.btn_box.set_halign(Gtk.Align.CENTER)
         self.btn_box.set_valign(Gtk.Align.CENTER)
-        # self.btn_box.set_margin_top(4)
         self.btn_box.set_margin_bottom(8)
 
-        play_btn = Gtk.Button()
-        play_btn.add_css_class("overlay-btn")
-        # Record icon (Red circle)
+        # 1. Close Button (Left)
+        self.quit_btn = Gtk.Button()
+        self.quit_btn.add_css_class("overlay-btn")
+        img_quit = Gtk.Image.new_from_file("/home/adi/Projects/whis/assets/quit.svg")
+        img_quit.set_pixel_size(16)
+        self.quit_btn.set_child(img_quit)
+        self.quit_btn.connect("clicked", self.on_quit_clicked)
+
+        # 2. Record/Stop Toggle (Center)
+        self.action_stack = Gtk.Stack()
+        self.action_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.action_stack.set_transition_duration(200)
+
+        self.record_btn = Gtk.Button()
+        self.record_btn.add_css_class("overlay-btn")
         img_record = Gtk.Image.new_from_file("/home/adi/Projects/whis/assets/record.svg")
         img_record.set_pixel_size(16)
-        play_btn.set_child(img_record)
-        
-        stop_btn = Gtk.Button()
-        stop_btn.add_css_class("overlay-btn")
+        self.record_btn.set_child(img_record)
+        self.record_btn.connect("clicked", self.on_record_clicked)
+
+        self.stop_btn = Gtk.Button()
+        self.stop_btn.add_css_class("overlay-btn")
         img_stop = Gtk.Image.new_from_file("/home/adi/Projects/whis/assets/stop.svg")
         img_stop.set_pixel_size(16)
-        stop_btn.set_child(img_stop)
-        
+        self.stop_btn.set_child(img_stop)
+        self.stop_btn.connect("clicked", self.on_stop_clicked)
+
+        self.action_stack.add_named(self.record_btn, "record")
+        self.action_stack.add_named(self.stop_btn, "stop")
+        self.action_stack.set_visible_child_name("record")
+
+        # 3. Preferences Button (Right)
         pref_btn = Gtk.Button()
         pref_btn.add_css_class("overlay-btn")
         img_pref = Gtk.Image.new_from_file("/home/adi/Projects/whis/assets/prefs.svg")
         img_pref.set_pixel_size(16)
         pref_btn.set_child(img_pref)
-        
-        self.quit_btn = Gtk.Button()
-        self.quit_btn.add_css_class("overlay-btn")
-        self.quit_btn.add_css_class("top-quit")
-        img_quit = Gtk.Image.new_from_file("/home/adi/Projects/whis/assets/quit.svg")
-        img_quit.set_pixel_size(16)
-        self.quit_btn.set_child(img_quit)
-        self.quit_btn.connect("clicked", self.on_quit_clicked)
-        self.quit_btn.set_halign(Gtk.Align.START)
-        self.quit_btn.set_valign(Gtk.Align.START)
-        self.quit_btn.set_visible(False)
 
-        self.btn_box.append(play_btn)
-        self.btn_box.append(stop_btn)
+        self.btn_box.append(self.quit_btn)
+        self.btn_box.append(self.action_stack)
         self.btn_box.append(pref_btn)
-        # Quit button removed from bottom Tray
 
         self.revealer.set_child(self.btn_box)
         self.main_box.append(self.revealer)
 
-        # Root Overlay to allow absolute positioning of Quit button
-        self.overlay = Gtk.Overlay()
-        self.overlay.set_child(self.main_box)
-        self.overlay.add_overlay(self.quit_btn)
-        
         # Click to reveal (Soundwave handle only)
         click_gesture = Gtk.GestureClick()
         click_gesture.connect("pressed", self.on_window_clicked)
@@ -147,7 +144,7 @@ class SoundWavePrototype(Gtk.Application):
         motion_ctrl.connect("leave", self.on_hover_leave)
         self.main_box.add_controller(motion_ctrl)
 
-        self.win.set_child(self.overlay)
+        self.win.set_child(self.main_box)
         self.setup_audio()
         self.win.present()
 
@@ -159,7 +156,6 @@ class SoundWavePrototype(Gtk.Application):
         self.revealed = True
         self.target_height = 64
         self.revealer.set_reveal_child(True)
-        self.quit_btn.set_visible(True)
 
     def on_hover_leave(self, ctrl):
         # Hide on mouse leave
@@ -167,7 +163,14 @@ class SoundWavePrototype(Gtk.Application):
             self.revealed = False
             self.target_height = 32
             self.revealer.set_reveal_child(False)
-            self.quit_btn.set_visible(False)
+
+    def on_record_clicked(self, btn):
+        print("Record clicked", flush=True)
+        self.action_stack.set_visible_child_name("stop")
+
+    def on_stop_clicked(self, btn):
+        print("Stop clicked", flush=True)
+        self.action_stack.set_visible_child_name("record")
 
     def on_quit_clicked(self, btn):
         print("Quit button clicked!", flush=True)

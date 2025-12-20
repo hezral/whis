@@ -33,10 +33,10 @@ modules:
   - name: hyprvoice
     buildsystem: simple
     build-options:
-      env:
-        GOBIN: /app/bin
-        GOCACHE: /tmp/go-cache
-        GOMODCACHE: /tmp/go-mod-cache
+      # env:
+      #   GOBIN: /app/bin
+      #   GOCACHE: /tmp/go-cache
+      #   GOMODCACHE: /tmp/go-mod-cache
       build-args:
         - --share=network
     sources:

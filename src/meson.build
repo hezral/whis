@@ -27,4 +27,5 @@ whis_sources = [
   'preferences.py'
 ]
 
+
 install_data(whis_sources, install_dir: moduledir)
