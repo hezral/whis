@@ -8,6 +8,7 @@ import math
 import random
 import subprocess
 import os
+import logging
 
 from .preferences import PreferencesWindow
 
@@ -25,22 +26,25 @@ class whisWindow(Gtk.ApplicationWindow):
         self.level_history = [-100.0] * 50
         self.sensitivity = 0.5
         self.scroll_speed = 40
-        self.target_height = 32
-        self.current_height = 32
+        self.target_height = 24
+        self.current_height = 24
         self.revealed = False
+        self.recording = False
 
         # Window Settings
+        self.set_title("Whis")
+        self.set_icon_name(self.app.app_id)
         self.set_decorated(False)
-        self.set_resizable(False)
+        self.set_resizable(True)
         self.set_name("pill-window")
-        self.set_default_size(100, 32)
+        self.set_default_size(100, 24)
 
         # Style context
         provider = Gtk.CssProvider()
         provider.load_from_data(b"""
             #pill-window {
-                background-color: rgba(0, 0, 0, 0.75);
-                border-radius: 16px;
+                background-color: rgba(0, 0, 0, 0.8);
+                border-radius: 12px;
                 border: 2px solid rgba(255, 255, 255, 0.1);
             }
             .overlay-btn {
@@ -72,7 +76,7 @@ class whisWindow(Gtk.ApplicationWindow):
         # Soundwave Handle
         self.canvas = Gtk.DrawingArea()
         self.canvas.set_draw_func(self.on_draw)
-        self.canvas.set_size_request(-1, 32)
+        self.canvas.set_size_request(-1, 24)
         self.handle = Gtk.WindowHandle()
         self.handle.set_child(self.canvas)
         self.main_box.append(self.handle)
@@ -85,7 +89,7 @@ class whisWindow(Gtk.ApplicationWindow):
         self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.btn_box.set_halign(Gtk.Align.CENTER)
         self.btn_box.set_valign(Gtk.Align.CENTER)
-        self.btn_box.set_margin_bottom(8)
+        self.btn_box.set_margin_bottom(4)
 
         # Buttons
         # 1. Close
@@ -94,7 +98,7 @@ class whisWindow(Gtk.ApplicationWindow):
         img_quit = Gtk.Image.new_from_file(self.get_asset_path("quit.svg"))
         img_quit.set_pixel_size(16)
         quit_btn.set_child(img_quit)
-        quit_btn.connect("clicked", lambda _: self.app.quit())
+        quit_btn.connect("clicked", self.on_close_request)
 
         # 2. Record/Stop Stack
         self.action_stack = Gtk.Stack()
@@ -113,7 +117,11 @@ class whisWindow(Gtk.ApplicationWindow):
         img_stop = Gtk.Image.new_from_file(self.get_asset_path("stop.svg"))
         img_stop.set_pixel_size(16)
         self.stop_btn.set_child(img_stop)
-        self.stop_btn.connect("clicked", self.on_stop_clicked)
+        
+        # Use GestureClick to detect Shift+Click
+        stop_gesture = Gtk.GestureClick()
+        stop_gesture.connect("released", self.on_stop_released)
+        self.stop_btn.add_controller(stop_gesture)
 
         self.action_stack.add_named(self.record_btn, "record")
         self.action_stack.add_named(self.stop_btn, "stop")
@@ -159,7 +167,8 @@ class whisWindow(Gtk.ApplicationWindow):
             bus = self.pipeline.get_bus()
             bus.add_signal_watch()
             bus.connect("message::element", self.on_level_message)
-            self.pipeline.set_state(Gst.State.PLAYING)
+            # Do not set to PLAYING here, wait for Record button
+            self.pipeline.set_state(Gst.State.NULL)
         except Exception as e:
             print(f"Failed to setup audio: {e}")
 
@@ -175,9 +184,15 @@ class whisWindow(Gtk.ApplicationWindow):
             self.last_audio_level = self.last_audio_level * 0.4 + normalized * 0.6
 
     def update_animation(self):
+        # Sync with actual height if it changed (e.g. compositor restoration)
+        actual_height = self.get_height()
+        if abs(actual_height - self.current_height) > 2 and abs(self.target_height - self.current_height) < 1:
+            self.current_height = actual_height
+
         if abs(self.target_height - self.current_height) > 0.5:
             self.current_height += (self.target_height - self.current_height) * 0.2
-            self.set_default_size(100, int(self.current_height))
+            width = self.get_width()
+            self.set_default_size(width, int(self.current_height))
             self.canvas.queue_draw()
 
         self.levels.pop(0)
@@ -217,22 +232,76 @@ class whisWindow(Gtk.ApplicationWindow):
 
     def on_window_clicked(self, gesture, n_press, x, y):
         self.revealed = True
-        self.target_height = 64
+        self.target_height = 48
         self.revealer.set_reveal_child(True)
+
+    def on_close_request(self, btn):
+        self.close()
+        self.app.quit()
 
     def on_hover_leave(self, ctrl):
         if self.revealed:
             self.revealed = False
-            self.target_height = 32
+            self.target_height = 24
             self.revealer.set_reveal_child(False)
 
     def on_record_clicked(self, btn):
-        subprocess.Popen(["hyprvoice", "toggle"])
-        self.action_stack.set_visible_child_name("stop")
+        self.toggle_recording()
 
-    def on_stop_clicked(self, btn):
-        subprocess.Popen(["hyprvoice", "toggle"])
+    def on_stop_released(self, gesture, n_press, x, y):
+        # Check for Shift modifier
+        event = gesture.get_last_event()
+        state = event.get_modifier_state()
+        
+        if state & Gdk.ModifierType.SHIFT_MASK:
+            logging.info("Shift+Click detected: Cancelling recording")
+            self.cancel_recording()
+        else:
+            self.toggle_recording()
+
+    def cancel_recording(self):
+        try:
+            result = subprocess.run(["hyprvoice", "cancel"], capture_output=True, text=True, check=False)
+            if result.stdout:
+                logging.info(f"hyprvoice: {result.stdout.strip()}")
+            if result.stderr:
+                logging.error(f"hyprvoice error: {result.stderr.strip()}")
+        except Exception as e:
+            logging.error(f"Failed to run hyprvoice cancel: {e}")
+
+        # Stop UI and audio pipeline
+        self.recording = False
+        if self.pipeline:
+            self.pipeline.set_state(Gst.State.NULL)
+        
+        # Reset levels immediately for a clean stop
+        self.last_audio_level = 0.0
+        self.levels = [0.05] * len(self.levels)
         self.action_stack.set_visible_child_name("record")
+
+    def toggle_recording(self):
+        try:
+            result = subprocess.run(["hyprvoice", "toggle"], capture_output=True, text=True, check=False)
+            if result.stdout:
+                logging.info(f"hyprvoice: {result.stdout.strip()}")
+            if result.stderr:
+                logging.error(f"hyprvoice error: {result.stderr.strip()}")
+        except Exception as e:
+            logging.error(f"Failed to run hyprvoice toggle: {e}")
+
+        self.recording = not self.recording
+        
+        if self.recording:
+            if self.pipeline:
+                self.pipeline.set_state(Gst.State.PLAYING)
+            self.action_stack.set_visible_child_name("stop")
+        else:
+            if self.pipeline:
+                self.pipeline.set_state(Gst.State.NULL)
+            # Reset levels immediately for a clean stop
+            self.last_audio_level = 0.0
+            self.levels = [0.05] * len(self.levels)
+            self.action_stack.set_visible_child_name("record")
 
     def on_preferences_clicked(self, btn):
         win = PreferencesWindow(self)

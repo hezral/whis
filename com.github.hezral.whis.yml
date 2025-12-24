@@ -30,6 +30,19 @@ modules:
       - type: git
         url: https://github.com/atx/wtype.git
 
+  # - name: ydotool
+  #   buildsystem: cmake
+  #   build-options:
+  #     config-opts:
+  #       - -DBUILD_DOCS=OFF
+  #   sources:
+  #     - type: git
+  #       url: https://github.com/ReimuNotMoe/ydotool.git
+  #       tag: v1.0.4
+  #     - type: shell
+  #       commands:
+  #         - sed -i 's/add_subdirectory(manpage)//' CMakeLists.txt
+
   - name: hyprvoice
     buildsystem: simple
     build-options:

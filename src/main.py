@@ -4,6 +4,7 @@
 import sys
 import os
 import subprocess
+import threading
 
 import gi
 import logging
@@ -29,6 +30,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gtk, Gio, Granite, Gdk, GLib, Gst
 
 from .window import whisWindow
+from .config_manager import ConfigManager
 
 
 class Application(Gtk.Application):
@@ -44,15 +46,21 @@ class Application(Gtk.Application):
         self.hyprvoice_process = None
         self.window = None
 
+    def _log_pipe(self, pipe, prefix):
+        """Reads lines from a pipe and logs them."""
+        with pipe:
+            for line in iter(pipe.readline, ""):
+                if line:
+                    logging.debug(f"hyprvoice: {line.strip()}")
+
     def do_activate(self):
         if not self.window:
             self.window = whisWindow(application=self)
-        self.window.present()
+            self.window.present()
 
     def start_daemon(self):
         """Starts the hyprvoice daemon if not already running."""
         if self.hyprvoice_process and self.hyprvoice_process.poll() is None:
-            logging.info("Daemon is already running.")
             return
 
         try:
@@ -69,7 +77,17 @@ class Application(Gtk.Application):
                 logging.info(f"Removing stale PID file: {pid_path}")
                 os.remove(pid_path)
 
-            self.hyprvoice_process = subprocess.Popen(["hyprvoice", "serve"])
+            self.hyprvoice_process = subprocess.Popen(
+                ["hyprvoice", "serve"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True
+            )
+            
+            # Start background threads to capture and log output
+            threading.Thread(target=self._log_pipe, args=(self.hyprvoice_process.stdout, "stdout"), daemon=True).start()
+            threading.Thread(target=self._log_pipe, args=(self.hyprvoice_process.stderr, "stderr"), daemon=True).start()
             
         except Exception as e:
             logging.error(f"Failed to start hyprvoice: {e}")
@@ -78,6 +96,15 @@ class Application(Gtk.Application):
     def do_startup(self):
         Gtk.Application.do_startup(self)
         Gst.init(None)
+
+        # Apply logging level from config
+        try:
+            config = ConfigManager().get_config()
+            if config.get("logging", {}).get("debug", False):
+                logging.getLogger().setLevel(logging.DEBUG)
+                logging.debug("Debug logging enabled via config.")
+        except Exception as e:
+            logging.error(f"Failed to apply logging level: {e}")
         
         # Keep application alive even when window is closed
         self.hold()
@@ -113,22 +140,42 @@ class Application(Gtk.Application):
         
         if "--toggle" in args:
             logging.info("Command line: toggling hyprvoice")
-            try:
-                subprocess.Popen(["hyprvoice", "toggle"])
-                # Hide window if visible to avoid stealing focus
-                if self.window and self.window.is_visible():
-                    self.window.hide()
-            except Exception as e:
-                logging.error(f"Failed to toggle hyprvoice: {e}")
+            self.activate()
+            if self.window:
+                self.window.toggle_recording()
+                self.window.present()
+            return 0
+
+        if "--cancel" in args:
+            logging.info("Command line: cancelling hyprvoice")
+            self.activate()
+            if self.window:
+                self.window.cancel_recording()
+                self.window.present()
             return 0
             
         self.activate()
         return 0
 
     def on_quit_action(self, action, param):
-        if self.hyprvoice_process:
-            self.hyprvoice_process.terminate()
+        logging.info("on_quit_action triggered.")
         self.quit()
+        
+    def do_shutdown(self):
+        logging.info("Shutting down...")
+
+        if self.window is not None:
+            self.window.close()
+
+        if self.hyprvoice_process:
+            logging.info("Terminating hyprvoice daemon")
+            self.hyprvoice_process.terminate()
+            try:
+                self.hyprvoice_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.hyprvoice_process.kill()
+        
+        Gtk.Application.do_shutdown(self)
 
     def on_prefers_color_scheme(self, *args):
         prefers_color_scheme = self.granite_settings.get_prefers_color_scheme()

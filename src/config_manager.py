@@ -45,56 +45,57 @@ class ConfigManager:
                 lines = f.readlines()
 
             new_lines = []
-            
             current_section = None
-            
-            # We will consume updates as we go.
-            # This is a simple line-based updater that preserves comments.
-            # It assumes keys mostly exist. If new keys are needed, this simple parser might miss them if not careful.
-            # But the default config has all keys.
+            processed_updates = {sec: set() for sec in updates}
             
             for line in lines:
+                original_line = line
                 stripped = line.strip()
                 
-                # Detect section
                 if stripped.startswith("[") and stripped.endswith("]"):
+                    # Before switching section, check if we missed any keys in the previous one
+                    if current_section in updates:
+                        for key, val in updates[current_section].items():
+                            if key not in processed_updates[current_section]:
+                                val_str = self._format_val(val)
+                                new_lines.append(f"{key} = {val_str}\n")
+                                processed_updates[current_section].add(key)
+
                     current_section = stripped[1:-1]
                     new_lines.append(line)
                     continue
                 
-                # If we are in a section that has updates
+                updated_line = False
                 if current_section and current_section in updates:
                     section_updates = updates[current_section]
-                    updated_line = False
-                    
                     for key, val in section_updates.items():
-                        # robust check for "key ="
                         if stripped.startswith(f"{key} =") or stripped.startswith(f"{key}="):
-                            # Formulate new line preserving indentation? 
-                            # Basic string formatting for now.
-                            # Handle different types
-                            if isinstance(val, bool):
-                                val_str = "true" if val else "false"
-                            elif isinstance(val, (int, float)):
-                                val_str = str(val)
-                            else:
-                                val_str = f'"{val}"'
-                                
-                            # Try to preserve comments if any (after #)
-                            comment = ""
-                            if "#" in line:
-                                comment = " " + line[line.find("#"):]
-                            else:
-                                comment = "\n" # add newline
-                                
-                            new_lines.append(f'{key} = {val_str}{comment}')
+                            val_str = self._format_val(val)
+                            comment = line[line.find("#"):] if "#" in line else "\n"
+                            new_lines.append(f"{key} = {val_str}{comment}")
+                            processed_updates[current_section].add(key)
                             updated_line = True
                             break
-                    
-                    if not updated_line:
-                        new_lines.append(line)
-                else:
+                
+                if not updated_line:
                     new_lines.append(line)
+
+            # Check for remaining keys in the last section
+            if current_section in updates:
+                for key, val in updates[current_section].items():
+                    if key not in processed_updates[current_section]:
+                        val_str = self._format_val(val)
+                        new_lines.append(f"{key} = {val_str}\n")
+                        processed_updates[current_section].add(key)
+
+            # Add completely new sections
+            for section, section_updates in updates.items():
+                if section not in processed_updates or not any(line.strip() == f"[{section}]" for line in lines):
+                    if section not in [l.strip()[1:-1] for l in lines if l.strip().startswith("[")]:
+                        new_lines.append(f"\n[{section}]\n")
+                        for key, val in section_updates.items():
+                            val_str = self._format_val(val)
+                            new_lines.append(f"  {key} = {val_str}\n")
 
             with open(self.config_path, "w") as f:
                 f.writelines(new_lines)
@@ -103,3 +104,11 @@ class ConfigManager:
             
         except Exception as e:
             logging.error(f"Error saving config: {e}")
+
+    def _format_val(self, val):
+        if isinstance(val, bool):
+            return "true" if val else "false"
+        elif isinstance(val, (int, float)):
+            return str(val)
+        else:
+            return f'"{val}"'

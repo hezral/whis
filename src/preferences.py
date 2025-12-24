@@ -1,6 +1,8 @@
 import gi
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk
+import datetime
+import subprocess
 
 from .config_manager import ConfigManager
 
@@ -17,6 +19,7 @@ class PreferencesWindow(Gtk.Window):
         self.rec_config = full_config.get("recording", {})
         self.inj_config = full_config.get("injection", {})
         self.notif_config = full_config.get("notifications", {})
+        self.log_config = full_config.get("logging", {})
 
         # Main scroller
         scrolled = Gtk.ScrolledWindow()
@@ -129,6 +132,24 @@ class PreferencesWindow(Gtk.Window):
         self.notifications_switch.set_active(self.notif_config.get("enabled", True))
         notif_box.append(self.notifications_switch)
 
+        # --- Logging Section ---
+        log_frame = Gtk.Frame(label="Logging")
+        log_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        log_box.set_margin_top(10)
+        log_box.set_margin_bottom(10)
+        log_box.set_margin_start(10)
+        log_box.set_margin_end(10)
+        log_frame.set_child(log_box)
+        main_box.append(log_frame)
+
+        log_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        log_row.append(Gtk.Label(label="Enable Debug Logging", xalign=0, hexpand=True))
+        self.debug_logging_switch = Gtk.Switch()
+        self.debug_logging_switch.set_active(self.log_config.get("debug", False))
+        self.debug_logging_switch.set_valign(Gtk.Align.CENTER)
+        log_row.append(self.debug_logging_switch)
+        log_box.append(log_row)
+
         # --- Daemon Management Section ---
         daemon_frame = Gtk.Frame(label="Daemon Management")
         daemon_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -183,7 +204,6 @@ class PreferencesWindow(Gtk.Window):
         main_box.append(save_btn)
 
     def append_output(self, text):
-        import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         end_iter = self.output_buffer.get_end_iter()
         self.output_buffer.insert(end_iter, f"[{timestamp}] {text}\n")
@@ -191,7 +211,6 @@ class PreferencesWindow(Gtk.Window):
         self.output_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
 
     def run_command(self, command):
-        import subprocess
         self.append_output(f"> {' '.join(command)}")
         try:
             result = subprocess.run(command, capture_output=True, text=True)
@@ -221,7 +240,7 @@ class PreferencesWindow(Gtk.Window):
     def on_version_clicked(self, btn):
         self.run_command(["hyprvoice", "version"])
 
-    def toggle_password_visibility(self, entry, icon_pos, event):
+    def toggle_password_visibility(self, entry, icon_pos):
         entry.set_visibility(not entry.get_visibility())
 
     def on_save_clicked(self, btn):
@@ -251,6 +270,11 @@ class PreferencesWindow(Gtk.Window):
         # Notifications
         updates["notifications"] = {
             "enabled": self.notifications_switch.get_active()
+        }
+
+        # Logging
+        updates["logging"] = {
+            "debug": self.debug_logging_switch.get_active()
         }
         
         self.config_manager.save_config(updates)
