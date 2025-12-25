@@ -5,6 +5,7 @@ import sys
 import os
 import subprocess
 import threading
+import signal
 
 import gi
 import logging
@@ -81,8 +82,7 @@ class Application(Gtk.Application):
                 ["hyprvoice", "serve"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True
+                text=True
             )
             
             # Start background threads to capture and log output
@@ -111,6 +111,10 @@ class Application(Gtk.Application):
 
         # Start hyprvoice service
         self.start_daemon()
+
+        # Handle termination signals
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self.quit)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self.quit)
         
         # Support quiting app using Super+Q
         quit_action = Gio.SimpleAction.new("quit", None)
@@ -183,8 +187,4 @@ class Application(Gtk.Application):
 
 def main(version):
     app = Application()
-    version = os.environ.get('VERSION')
-    if version is None:
-        version = '0.1.0'
-    logging.info(version)
     return app.run(sys.argv)

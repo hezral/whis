@@ -43,13 +43,31 @@ modules:
   #       commands:
   #         - sed -i 's/add_subdirectory(manpage)//' CMakeLists.txt
 
+  - name: golang
+    buildsystem: simple
+    cleanup:
+      - "*"
+    sources:
+      - type: archive
+        url: https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+        sha256: e9262f3f1e9447b97368d1840810459a85012501a353d9e4a3c1042df52d2f8e
+        dest: golang
+        only-arches: [x86_64]
+      - type: archive
+        url: https://go.dev/dl/go1.23.4.linux-arm64.tar.gz
+        sha256: 16e5017863a7f6071363782b1b8042eb12c6ca4f4cd71528b2123f0a1275b13e
+        dest: golang
+        only-arches: [aarch64]
+    build-commands:
+      - cp -r golang /app/lib/golang
+      - ln -s /app/lib/golang/bin/go /app/bin/go
+
   - name: hyprvoice
     buildsystem: simple
     build-options:
-      # env:
-      #   GOBIN: /app/bin
-      #   GOCACHE: /tmp/go-cache
-      #   GOMODCACHE: /tmp/go-mod-cache
+      env:
+        GOROOT: /app/lib/golang
+        PATH: /app/bin:/usr/bin
       build-args:
         - --share=network
     sources:
@@ -57,8 +75,8 @@ modules:
         url: https://github.com/LeonardoTrapani/hyprvoice.git
         branch: main
     build-commands:
-      - . /usr/lib/sdk/golang/enable.sh && go mod download
-      - . /usr/lib/sdk/golang/enable.sh && go build -o /app/bin/hyprvoice ./cmd/hyprvoice
+      - go mod download
+      - go build -o /app/bin/hyprvoice ./cmd/hyprvoice
 
   - name: whis
     buildsystem: meson

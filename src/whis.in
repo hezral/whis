@@ -27,10 +27,10 @@ pkgdatadir = '@pkgdatadir@'
 localedir = '@localedir@'
 
 sys.path.insert(1, pkgdatadir)
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 gettext.install('whis', localedir)
 
 if __name__ == '__main__':
 
     from whis import main
+    print("Whis", VERSION)
     sys.exit(main.main(VERSION))

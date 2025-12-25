@@ -12,6 +12,9 @@ import logging
 
 from .preferences import PreferencesWindow
 
+# Initialize module-level logger
+logger = logging.getLogger(__name__)
+
 class whisWindow(Gtk.ApplicationWindow):
     __gtype_name__ = 'whisWindow'
 
@@ -45,7 +48,7 @@ class whisWindow(Gtk.ApplicationWindow):
             #pill-window {
                 background-color: rgba(0, 0, 0, 0.8);
                 border-radius: 12px;
-                border: 2px solid rgba(255, 255, 255, 0.1);
+                border: 2px solid rgba(255, 255, 255, 0.2);
             }
             .overlay-btn {
                 background: none;
@@ -85,6 +88,7 @@ class whisWindow(Gtk.ApplicationWindow):
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.revealer.set_transition_duration(300)
+        self.revealer.set_reveal_child(False)
 
         self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.btn_box.set_halign(Gtk.Align.CENTER)
@@ -117,11 +121,7 @@ class whisWindow(Gtk.ApplicationWindow):
         img_stop = Gtk.Image.new_from_file(self.get_asset_path("stop.svg"))
         img_stop.set_pixel_size(16)
         self.stop_btn.set_child(img_stop)
-        
-        # Use GestureClick to detect Shift+Click
-        stop_gesture = Gtk.GestureClick()
-        stop_gesture.connect("released", self.on_stop_released)
-        self.stop_btn.add_controller(stop_gesture)
+        self.stop_btn.connect("clicked", self.on_stop_clicked)
 
         self.action_stack.add_named(self.record_btn, "record")
         self.action_stack.add_named(self.stop_btn, "stop")
@@ -184,15 +184,9 @@ class whisWindow(Gtk.ApplicationWindow):
             self.last_audio_level = self.last_audio_level * 0.4 + normalized * 0.6
 
     def update_animation(self):
-        # Sync with actual height if it changed (e.g. compositor restoration)
-        actual_height = self.get_height()
-        if abs(actual_height - self.current_height) > 2 and abs(self.target_height - self.current_height) < 1:
-            self.current_height = actual_height
-
         if abs(self.target_height - self.current_height) > 0.5:
             self.current_height += (self.target_height - self.current_height) * 0.2
-            width = self.get_width()
-            self.set_default_size(width, int(self.current_height))
+            self.set_default_size(100, int(self.current_height))
             self.canvas.queue_draw()
 
         self.levels.pop(0)
@@ -248,16 +242,8 @@ class whisWindow(Gtk.ApplicationWindow):
     def on_record_clicked(self, btn):
         self.toggle_recording()
 
-    def on_stop_released(self, gesture, n_press, x, y):
-        # Check for Shift modifier
-        event = gesture.get_last_event()
-        state = event.get_modifier_state()
-        
-        if state & Gdk.ModifierType.SHIFT_MASK:
-            logging.info("Shift+Click detected: Cancelling recording")
-            self.cancel_recording()
-        else:
-            self.toggle_recording()
+    def on_stop_clicked(self, btn):
+        self.toggle_recording()
 
     def cancel_recording(self):
         try:
@@ -274,34 +260,35 @@ class whisWindow(Gtk.ApplicationWindow):
         if self.pipeline:
             self.pipeline.set_state(Gst.State.NULL)
         
-        # Reset levels immediately for a clean stop
-        self.last_audio_level = 0.0
-        self.levels = [0.05] * len(self.levels)
-        self.action_stack.set_visible_child_name("record")
+        # Reset UI immediately
+        self.record_btn.set_visible(True)
+        self.stop_btn.set_visible(False)
 
     def toggle_recording(self):
         try:
             result = subprocess.run(["hyprvoice", "toggle"], capture_output=True, text=True, check=False)
             if result.stdout:
-                logging.info(f"hyprvoice: {result.stdout.strip()}")
+                logger.info(f"hyprvoice toggle result: {result.stdout.strip()}")
             if result.stderr:
-                logging.error(f"hyprvoice error: {result.stderr.strip()}")
+                logger.error(f"hyprvoice toggle error: {result.stderr.strip()}")
         except Exception as e:
-            logging.error(f"Failed to run hyprvoice toggle: {e}")
+            logger.error(f"Failed to run hyprvoice toggle: {e}")
 
         self.recording = not self.recording
         
         if self.recording:
             if self.pipeline:
                 self.pipeline.set_state(Gst.State.PLAYING)
-            self.action_stack.set_visible_child_name("stop")
+            self.record_btn.set_visible(False)
+            self.stop_btn.set_visible(True)
         else:
             if self.pipeline:
                 self.pipeline.set_state(Gst.State.NULL)
             # Reset levels immediately for a clean stop
             self.last_audio_level = 0.0
             self.levels = [0.05] * len(self.levels)
-            self.action_stack.set_visible_child_name("record")
+            self.record_btn.set_visible(True)
+            self.stop_btn.set_visible(False)
 
     def on_preferences_clicked(self, btn):
         win = PreferencesWindow(self)

@@ -4,14 +4,7 @@ import logging
 
 class ConfigManager:
     def __init__(self):
-        xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config:
-            self.config_path = os.path.join(xdg_config, "hyprvoice", "config.toml")
-        else:
-            # Fallback (though XDG_CONFIG_HOME usually exists in flatpak)
-            self.config_path = os.path.expanduser("~/.config/hyprvoice/config.toml")
-            
-        logging.info(f"Config manager: initializing configuration system...")
+        self.config_path = os.path.join(os.environ.get("XDG_CONFIG_HOME"), "hyprvoice", "config.toml")
         logging.debug(f"ConfigManager initialized with path: {self.config_path}")
 
     def get_config(self):
