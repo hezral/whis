@@ -11,6 +11,7 @@ import os
 import logging
 
 from .preferences import PreferencesWindow
+from .logging_utils import log_function_calls
 
 # Initialize module-level logger
 logger = logging.getLogger(__name__)
@@ -42,36 +43,6 @@ class whisWindow(Gtk.ApplicationWindow):
         self.set_name("pill-window")
         self.set_default_size(100, 24)
 
-        # Style context
-        provider = Gtk.CssProvider()
-        provider.load_from_data(b"""
-            #pill-window {
-                background-color: rgba(0, 0, 0, 0.8);
-                border-radius: 12px;
-                border: 2px solid rgba(255, 255, 255, 0.2);
-            }
-            .overlay-btn {
-                background: none;
-                border: none;
-                outline: none;
-                box-shadow: none;
-                color: rgba(255, 255, 255, 0.8);
-                padding: 2px;
-                margin: 0 2px;
-                border-radius: 50%;
-                min-width: 20px;
-                min-height: 20px;
-            }
-            .overlay-btn:hover {
-                color: white;
-                background-color: rgba(255, 255, 255, 0.1);
-            }
-        """)
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(),
-            provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
 
         # Main Layout
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -88,7 +59,7 @@ class whisWindow(Gtk.ApplicationWindow):
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.revealer.set_transition_duration(300)
-        self.revealer.set_reveal_child(False)
+        self.revealer.set_visible(False)
 
         self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.btn_box.set_halign(Gtk.Align.CENTER)
@@ -154,12 +125,19 @@ class whisWindow(Gtk.ApplicationWindow):
         self.set_child(self.main_box)
         self.setup_audio()
 
+        # Keyboard shortcuts
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self.on_key_pressed)
+        self.add_controller(key_ctrl)
+
+        # GLib timeout for animation
         GLib.timeout_add(self.scroll_speed, self.update_animation)
 
     def get_asset_path(self, filename):
         # We'll use the assets folder in Project root for now
         return os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", filename)
 
+    @log_function_calls
     def setup_audio(self):
         pipeline_str = "autoaudiosrc ! audioconvert ! level interval=50000000 ! fakesink"
         try:
@@ -187,6 +165,7 @@ class whisWindow(Gtk.ApplicationWindow):
         if abs(self.target_height - self.current_height) > 0.5:
             self.current_height += (self.target_height - self.current_height) * 0.2
             self.set_default_size(100, int(self.current_height))
+            self.set_default_size(100, 24)
             self.canvas.queue_draw()
 
         self.levels.pop(0)
@@ -227,6 +206,7 @@ class whisWindow(Gtk.ApplicationWindow):
     def on_window_clicked(self, gesture, n_press, x, y):
         self.revealed = True
         self.target_height = 48
+        self.revealer.set_visible(True)
         self.revealer.set_reveal_child(True)
 
     def on_close_request(self, btn):
@@ -238,7 +218,9 @@ class whisWindow(Gtk.ApplicationWindow):
             self.revealed = False
             self.target_height = 24
             self.revealer.set_reveal_child(False)
+            self.revealer.set_visible(False)
 
+    @log_function_calls
     def on_record_clicked(self, btn):
         self.toggle_recording()
 
@@ -264,6 +246,7 @@ class whisWindow(Gtk.ApplicationWindow):
         self.record_btn.set_visible(True)
         self.stop_btn.set_visible(False)
 
+    @log_function_calls
     def toggle_recording(self):
         try:
             result = subprocess.run(["hyprvoice", "toggle"], capture_output=True, text=True, check=False)
@@ -293,5 +276,12 @@ class whisWindow(Gtk.ApplicationWindow):
     def on_preferences_clicked(self, btn):
         win = PreferencesWindow(self)
         win.present()
+
+    def on_key_pressed(self, controller, keyval, keycode, state):
+        # Ctrl+E to open preferences
+        if keyval == Gdk.KEY_e and (state & Gdk.ModifierType.CONTROL_MASK):
+            self.on_preferences_clicked(None)
+            return True
+        return False
 
         

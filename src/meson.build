@@ -24,7 +24,8 @@ whis_sources = [
   'window.py',
   'mode_switch.py',
   'config_manager.py',
-  'preferences.py'
+  'preferences.py',
+  'logging_utils.py'
 ]
 
 

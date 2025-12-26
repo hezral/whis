@@ -1,5 +1,5 @@
 project('com.github.hezral.whis',  
-          version: '0.1.7',
+          version: '0.1.10',
     meson_version: '>= 0.50.0',
   default_options: [ 'warning_level=2',
                    ],

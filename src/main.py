@@ -11,20 +11,6 @@ import gi
 import logging
 import sys
 
-# Configure logging
-log_dir = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "whis.log")
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s',
-    datefmt='%Y/%m/%d %H:%M:%S',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file)
-    ]
-)
 gi.require_version('Gtk', '4.0')
 gi.require_version('Granite', '7.0')
 gi.require_version('Gst', '1.0')
@@ -32,6 +18,7 @@ from gi.repository import Gtk, Gio, Granite, Gdk, GLib, Gst
 
 from .window import whisWindow
 from .config_manager import ConfigManager
+from .logging_utils import set_verbose_logging, log_function_calls
 
 
 class Application(Gtk.Application):
@@ -54,11 +41,13 @@ class Application(Gtk.Application):
                 if line:
                     logging.debug(f"hyprvoice: {line.strip()}")
 
+    @log_function_calls
     def do_activate(self):
         if not self.window:
             self.window = whisWindow(application=self)
             self.window.present()
 
+    @log_function_calls
     def start_daemon(self):
         """Starts the hyprvoice daemon if not already running."""
         if self.hyprvoice_process and self.hyprvoice_process.poll() is None:
@@ -94,15 +83,36 @@ class Application(Gtk.Application):
             self.hyprvoice_process = None
 
     def do_startup(self):
+        # Configure logging
+        log_dir = os.path.join(GLib.get_user_data_dir(), "whis")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "whis.log")
+        
+        # Primary logging config
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s %(levelname)s: %(message)s',
+            datefmt='%Y/%m/%d %H:%M:%S',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler(log_file)
+            ]
+        )
+
         Gtk.Application.do_startup(self)
         Gst.init(None)
 
         # Apply logging level from config
         try:
             config = ConfigManager().get_config()
-            if config.get("logging", {}).get("debug", False):
+            debug_enabled = config.get("logging", {}).get("debug", False) or "--debug" in sys.argv
+            verbose_enabled = config.get("logging", {}).get("verbose", False) or "--verbose" in sys.argv
+            
+            if debug_enabled or verbose_enabled:
                 logging.getLogger().setLevel(logging.DEBUG)
-                logging.debug("Debug logging enabled via config.")
+                logging.debug(f"Debug logging enabled (debug={debug_enabled}, verbose={verbose_enabled})")
+            
+            set_verbose_logging(verbose_enabled)
         except Exception as e:
             logging.error(f"Failed to apply logging level: {e}")
         
@@ -131,14 +141,21 @@ class Application(Gtk.Application):
 
         # set CSS provider
         provider = Gtk.CssProvider()
-        provider.load_from_path(os.path.join(os.path.dirname(__file__), "data", "application.css"))
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        css_path = os.path.join(os.path.dirname(__file__), "data", "application.css")
+        if not os.path.exists(css_path):
+            # Try parent/data for local dev
+            css_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "application.css")
+        
+        if os.path.exists(css_path):
+            provider.load_from_path(css_path)
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         # prepend custom path for icon theme
         icon_theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
         icon_theme.add_search_path(os.path.join(os.path.dirname(__file__), "data", "icons"))
 
     
+    @log_function_calls
     def do_command_line(self, command_line):
         args = command_line.get_arguments()
         
@@ -158,6 +175,14 @@ class Application(Gtk.Application):
                 self.window.present()
             return 0
             
+        if "--debug" in args:
+            logging.info("Command line: enabling debug logging")
+            logging.getLogger().setLevel(logging.DEBUG)
+
+        if "--verbose" in args:
+            logging.info("Command line: enabling verbose logging")
+            set_verbose_logging(True)
+
         self.activate()
         return 0
 
@@ -165,6 +190,7 @@ class Application(Gtk.Application):
         logging.info("on_quit_action triggered.")
         self.quit()
         
+    @log_function_calls
     def do_shutdown(self):
         logging.info("Shutting down...")
 

@@ -45,6 +45,6 @@ install_data(
     install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps')
 )
 
-install_data('application.css',
+install_data(['application.css'],
   install_dir: join_paths(pkgdatadir, project_short_name, 'data')
 )

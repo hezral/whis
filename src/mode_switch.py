@@ -11,15 +11,6 @@ class ModeSwitch(Gtk.Grid):
 
     __gtype_name__ = "ModeSwitch"
 
-    CSS = """
-    .modeswitch slider {min-height: 16px; min-width: 16px;}
-    .modeswitch:checked {background-clip: border-box; background-color: rgba(0,0,0,0.1); background-image: none;}
-    """
-    
-    css_provider = Gtk.CssProvider()
-    css_provider.load_from_data(CSS.encode(), len(CSS.encode()))
-    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    
     active = GObject.Property(type=bool, default=True)
     
     def __init__(self, primary_widget, secondary_widget, primary_widget_callback, secondary_widget_callback, *args, **kwargs):

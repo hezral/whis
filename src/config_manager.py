@@ -1,12 +1,14 @@
 import os
 import tomllib
 import logging
+from .logging_utils import log_function_calls
 
 class ConfigManager:
     def __init__(self):
         self.config_path = os.path.join(os.environ.get("XDG_CONFIG_HOME"), "hyprvoice", "config.toml")
         logging.debug(f"ConfigManager initialized with path: {self.config_path}")
 
+    @log_function_calls
     def get_config(self):
         if not os.path.exists(self.config_path):
             return {}
@@ -19,6 +21,7 @@ class ConfigManager:
             logging.error(f"Error loading config: {e}")
             return {}
 
+    @log_function_calls
     def save_config(self, updates):
         """
         Updates config with a dictionary of section -> key -> value.

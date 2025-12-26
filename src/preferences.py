@@ -1,281 +1,432 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Preferences Window
+# Ported to GTK 4 with new premium styling
+
 import gi
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gtk
-import datetime
-import subprocess
-
+from gi.repository import Gtk, Gdk, GObject
 from .config_manager import ConfigManager
 
 class PreferencesWindow(Gtk.Window):
     def __init__(self, parent):
         super().__init__(transient_for=parent)
         self.set_title("Preferences")
-        self.set_modal(True)
         self.set_default_size(500, 600)
-        
+        self.set_modal(True)
+        self.set_resizable(False)
+
+        self.app = parent.app
+        self.loading = True
         self.config_manager = ConfigManager()
-        full_config = self.config_manager.get_config()
-        self.tx_config = full_config.get("transcription", {})
-        self.rec_config = full_config.get("recording", {})
-        self.inj_config = full_config.get("injection", {})
-        self.notif_config = full_config.get("notifications", {})
-        self.log_config = full_config.get("logging", {})
 
-        # Main scroller
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.set_child(scrolled)
+        # Scrolled Window
+        self.scrolled_window = Gtk.ScrolledWindow()
+        self.scrolled_window.set_vexpand(True)
+        self.scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
+        self.set_child(self.scrolled_window)
 
-        # Content Box
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        main_box.set_margin_top(20)
-        main_box.set_margin_bottom(20)
-        main_box.set_margin_start(20)
-        main_box.set_margin_end(20)
-        scrolled.set_child(main_box)
+        # Main Box
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.main_box.set_margin_top(20)
+        self.main_box.set_margin_bottom(12)
+        self.main_box.set_margin_start(20)
+        self.main_box.set_margin_end(20)
+        self.scrolled_window.set_child(self.main_box)
 
         # --- Transcription Section ---
-        tx_frame = Gtk.Frame(label="Transcription")
-        tx_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        tx_box.set_margin_top(10)
-        tx_box.set_margin_bottom(10)
-        tx_box.set_margin_start(10)
-        tx_box.set_margin_end(10)
-        tx_frame.set_child(tx_box)
-        main_box.append(tx_frame)
+        self.provider_setting = SubSettings(
+            type="dropdown", 
+            name="provider", 
+            label="Provider", 
+            sublabel="Choose transcription service", 
+            separator=True,
+            params=(["OpenAI", "Groq Transcription", "Groq Translation"],)
+        )
 
-        # Provider
-        tx_box.append(Gtk.Label(label="Provider", xalign=0))
-        self.provider_entry = Gtk.DropDown.new_from_strings(["openai", "groq-transcription", "groq-translation"])
-        current_provider = self.tx_config.get("provider", "openai")
-        if current_provider == "openai":
-            self.provider_entry.set_selected(0)
-        elif current_provider == "groq-transcription":
-            self.provider_entry.set_selected(1)
-        elif current_provider == "groq-translation":
-            self.provider_entry.set_selected(2)
-        tx_box.append(self.provider_entry)
+        # OpenAI specific settings
+        self.openai_api_key = SubSettings(
+            type="entry",
+            name="openai-api-key",
+            label="OpenAI API Key",
+            sublabel="Secret key for OpenAI",
+            separator=True
+        )
 
-        # API Key
-        tx_box.append(Gtk.Label(label="API Key", xalign=0))
-        self.api_key_entry = Gtk.Entry()
-        self.api_key_entry.set_text(self.tx_config.get("api_key", ""))
-        self.api_key_entry.set_visibility(False)
-        self.api_key_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, "view-reveal-symbolic")
-        self.api_key_entry.connect("icon-press", self.toggle_password_visibility)
-        tx_box.append(self.api_key_entry)
+        self.openai_model = SubSettings(
+            type="dropdown",
+            name="openai-model",
+            label="OpenAI Model",
+            sublabel="Choose model (whisper-1 is standard)",
+            separator=True,
+            params=(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],)
+        )
 
-        # Language
-        tx_box.append(Gtk.Label(label="Language (empty for auto)", xalign=0))
-        self.language_entry = Gtk.Entry()
-        self.language_entry.set_text(self.tx_config.get("language", ""))
-        tx_box.append(self.language_entry)
+        # Groq specific settings
+        self.groq_api_key = SubSettings(
+            type="entry",
+            name="groq-api-key",
+            label="Groq API Key",
+            sublabel="Secret key for Groq",
+            separator=True
+        )
 
-        # Model
-        tx_box.append(Gtk.Label(label="Model", xalign=0))
-        self.model_entry = Gtk.Entry()
-        self.model_entry.set_text(self.tx_config.get("model", "whisper-1"))
-        tx_box.append(self.model_entry)
+        self.groq_model = SubSettings(
+            type="dropdown",
+            name="groq-model",
+            label="Groq Model",
+            sublabel="Performance vs Speed",
+            separator=True,
+            params=(["whisper-large-v3", "whisper-large-v3-turbo"],)
+        )
 
-        # --- Recording Section ---
-        rec_frame = Gtk.Frame(label="Recording")
-        rec_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        rec_box.set_margin_top(10)
-        rec_box.set_margin_bottom(10)
-        rec_box.set_margin_start(10)
-        rec_box.set_margin_end(10)
-        rec_frame.set_child(rec_box)
-        main_box.append(rec_frame)
+        self.language_setting = SubSettings(
+            type="entry",
+            name="language",
+            label="Language",
+            sublabel="ISO code (e.g. 'en', 'it') or empty for auto-detect",
+            separator=False
+        )
 
-        rec_box.append(Gtk.Label(label="Timeout (e.g. 5m, 30s)", xalign=0))
-        self.timeout_entry = Gtk.Entry()
-        self.timeout_entry.set_text(self.rec_config.get("timeout", "5m"))
-        rec_box.append(self.timeout_entry)
+        transcription_group = SettingsGroup("Transcription", (
+            self.provider_setting, 
+            self.openai_api_key, self.openai_model,
+            self.groq_api_key, self.groq_model,
+            self.language_setting
+        ))
+        self.main_box.append(transcription_group)
 
-        # --- Injection Section ---
-        inj_frame = Gtk.Frame(label="Text Injection")
-        inj_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        inj_box.set_margin_top(10)
-        inj_box.set_margin_bottom(10)
-        inj_box.set_margin_start(10)
-        inj_box.set_margin_end(10)
-        inj_frame.set_child(inj_box)
-        main_box.append(inj_frame)
+        # Connect provider dropdown
+        self.provider_setting.dropdown.connect("notify::selected", self.on_provider_changed)
+        # Initial call to set visibility
+        self.on_provider_changed(self.provider_setting.dropdown, None)
 
-        inj_box.append(Gtk.Label(label="Mode", xalign=0))
-        self.mode_entry = Gtk.DropDown.new_from_strings(["fallback", "clipboard", "type"])
-        current_mode = self.inj_config.get("mode", "fallback")
-        if current_mode == "fallback":
-            self.mode_entry.set_selected(0)
-        elif current_mode == "clipboard":
-            self.mode_entry.set_selected(1)
-        elif current_mode == "type":
-            self.mode_entry.set_selected(2)
-        inj_box.append(self.mode_entry)
+        # --- Behavior Section ---
+        timeout_setting = SubSettings(
+            type="spinbutton",
+            name="timeout",
+            label="Recording Timeout",
+            sublabel="Max duration in seconds (0-300)",
+            separator=True,
+            params=(0, 300, 1) # min, max, step
+        )
 
-        self.restore_clipboard_switch = Gtk.CheckButton(label="Restore Clipboard after injection")
-        self.restore_clipboard_switch.set_active(self.inj_config.get("restore_clipboard", True))
-        inj_box.append(self.restore_clipboard_switch)
+        injection_mode = SubSettings(
+            type="dropdown",
+            name="injection-mode",
+            label="Injection Mode",
+            sublabel="How text is inserted into active window",
+            separator=True,
+            params=(["fallback", "clipboard", "type"],)
+        )
 
-        # --- Notifications Section ---
-        notif_frame = Gtk.Frame(label="Notifications")
-        notif_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        notif_box.set_margin_top(10)
-        notif_box.set_margin_bottom(10)
-        notif_box.set_margin_start(10)
-        notif_box.set_margin_end(10)
-        notif_frame.set_child(notif_box)
-        main_box.append(notif_frame)
+        restore_clipboard = SubSettings(
+            type="switch",
+            name="restore-clipboard",
+            label="Restore Clipboard",
+            sublabel="Restore original clipboard after injection",
+            separator=False
+        )
 
-        self.notifications_switch = Gtk.CheckButton(label="Enable Desktop Notifications")
-        self.notifications_switch.set_active(self.notif_config.get("enabled", True))
-        notif_box.append(self.notifications_switch)
+        behavior_group = SettingsGroup("Behavior", (timeout_setting, injection_mode, restore_clipboard))
+        self.main_box.append(behavior_group)
 
-        # --- Logging Section ---
-        log_frame = Gtk.Frame(label="Logging")
-        log_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        log_box.set_margin_top(10)
-        log_box.set_margin_bottom(10)
-        log_box.set_margin_start(10)
-        log_box.set_margin_end(10)
-        log_frame.set_child(log_box)
-        main_box.append(log_frame)
+        # --- System Section ---
+        notif_setting = SubSettings(
+            type="switch",
+            name="notifications",
+            label="Enable Notifications",
+            sublabel="Show desktop notifications for transcription status",
+            separator=True
+        )
 
-        log_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        log_row.append(Gtk.Label(label="Enable Debug Logging", xalign=0, hexpand=True))
-        self.debug_logging_switch = Gtk.Switch()
-        self.debug_logging_switch.set_active(self.log_config.get("debug", False))
-        self.debug_logging_switch.set_valign(Gtk.Align.CENTER)
-        log_row.append(self.debug_logging_switch)
-        log_box.append(log_row)
+        logging_setting = SubSettings(
+            type="switch",
+            name="debug-logging",
+            label="Debug Logging",
+            sublabel="Enable debug output for troubleshooting",
+            separator=False
+        )
 
-        # --- Daemon Management Section ---
-        daemon_frame = Gtk.Frame(label="Daemon Management")
-        daemon_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        daemon_box.set_margin_top(10)
-        daemon_box.set_margin_bottom(10)
-        daemon_box.set_margin_start(10)
-        daemon_box.set_margin_end(10)
-        daemon_frame.set_child(daemon_box)
-        main_box.append(daemon_frame)
+        verbose_logging_setting = SubSettings(
+            type="checkbutton",
+            name="verbose-logging",
+            label=None,
+            sublabel=None,
+            separator=False,
+            params=("Verbose logging",)
+        )
 
-        grid = Gtk.Grid(column_spacing=10, row_spacing=10)
-        grid.set_halign(Gtk.Align.CENTER)
-        daemon_box.append(grid)
+        system_group = SettingsGroup("System", (notif_setting, logging_setting, verbose_logging_setting))
+        self.main_box.append(system_group)
 
-        btn_start = Gtk.Button(label="Start Service")
-        btn_start.connect("clicked", self.on_start_clicked)
-        grid.attach(btn_start, 0, 0, 1, 1)
+        # Connect all settings for auto-save
+        self.all_subsettings = []
+        for group in (transcription_group, behavior_group, system_group):
+            for subsetting in group.subsettings:
+                self.all_subsettings.append(subsetting)
+                subsetting.connect("changed", self.on_setting_changed)
 
-        btn_stop = Gtk.Button(label="Stop Service")
-        btn_stop.connect("clicked", self.on_stop_clicked)
-        grid.attach(btn_stop, 1, 0, 1, 1)
+        self.load_settings()
+        self.loading = False
 
-        btn_status = Gtk.Button(label="Check Status")
-        btn_status.connect("clicked", self.on_status_clicked)
-        grid.attach(btn_status, 0, 1, 1, 1)
-
-        btn_version = Gtk.Button(label="Version")
-        btn_version.connect("clicked", self.on_version_clicked)
-        grid.attach(btn_version, 1, 1, 1, 1)
-
-        # Output area
-        scrolled_out = Gtk.ScrolledWindow()
-        scrolled_out.set_min_content_height(150)
-        scrolled_out.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    def load_settings(self):
+        config = self.config_manager.get_config()
         
-        self.output_view = Gtk.TextView()
-        self.output_view.set_editable(False)
-        self.output_view.set_monospace(True)
-        self.output_view.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.output_buffer = self.output_view.get_buffer()
-        scrolled_out.set_child(self.output_view)
+        # Helper to get nested config
+        def get_val(section, key, default=""):
+            return config.get(section, {}).get(key, default)
 
-        frame_out = Gtk.Frame()
-        frame_out.set_child(scrolled_out)
-        daemon_box.append(frame_out)
+        # Provider mapping
+        p_map = {"openai": 0, "groq-transcription": 1, "groq-translation": 2}
+        p_val = get_val("transcription", "provider", "openai")
+        self.provider_setting.set_value(p_map.get(p_val, 0))
 
-        # --- Save Button ---
-        save_btn = Gtk.Button(label="Save Preferences")
-        save_btn.add_css_class("suggested-action")
-        save_btn.set_margin_top(10)
-        save_btn.connect("clicked", self.on_save_clicked)
-        main_box.append(save_btn)
+        # Transcription fields
+        openai_key = get_val("transcription", "openai_api_key", "")
+        openai_model = get_val("transcription", "openai_model", "whisper-1")
+        groq_key = get_val("transcription", "groq_api_key", "")
+        groq_model = get_val("transcription", "groq_model", "whisper-large-v3")
+        
+        # Fallback to general api_key/model if specialized keys are missing
+        if not openai_key and p_val == "openai":
+            openai_key = get_val("transcription", "api_key", "")
+        if not openai_model and p_val == "openai":
+            openai_model = get_val("transcription", "model", "whisper-1")
+            
+        if not groq_key and p_val.startswith("groq"):
+            groq_key = get_val("transcription", "api_key", "")
+        if not groq_model and p_val.startswith("groq"):
+            groq_model = get_val("transcription", "model", "whisper-large-v3")
 
-    def append_output(self, text):
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        end_iter = self.output_buffer.get_end_iter()
-        self.output_buffer.insert(end_iter, f"[{timestamp}] {text}\n")
-        mark = self.output_buffer.create_mark(None, end_iter, False)
-        self.output_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+        self.openai_api_key.set_value(openai_key)
+        o_map = {"whisper-1": 0, "gpt-4o-transcribe": 1, "gpt-4o-mini-transcribe": 2}
+        self.openai_model.set_value(o_map.get(openai_model, 0))
+        self.groq_api_key.set_value(groq_key)
+        
+        g_map = {"whisper-large-v3": 0, "whisper-large-v3-turbo": 1}
+        self.groq_model.set_value(g_map.get(groq_model, 0))
+        
+        self.language_setting.set_value(get_val("transcription", "language", ""))
 
-    def run_command(self, command):
-        self.append_output(f"> {' '.join(command)}")
+        # Behavior
+        timeout_str = get_val("recording", "timeout", "10s")
         try:
-            result = subprocess.run(command, capture_output=True, text=True)
-            if result.stdout:
-                self.append_output(result.stdout.strip())
-            if result.stderr:
-                self.append_output(f"Error: {result.stderr.strip()}")
-        except Exception as e:
-            self.append_output(f"Execution failed: {e}")
+            # Simple parser for "10s", "5m"
+            if timeout_str.endswith("s"):
+                t_val = int(timeout_str[:-1])
+            elif timeout_str.endswith("m"):
+                t_val = int(timeout_str[:-1]) * 60
+            else:
+                t_val = int(timeout_str)
+        except:
+            t_val = 10
+        
+        for s in self.all_subsettings:
+            if s.name == "timeout":
+                s.set_value(t_val)
+            elif s.name == "injection-mode":
+                m_map = {"fallback": 0, "clipboard": 1, "type": 2}
+                s.set_value(m_map.get(get_val("injection", "mode", "fallback"), 0))
+            elif s.name == "restore-clipboard":
+                s.set_value(get_val("injection", "restore_clipboard", True))
+            elif s.name == "notifications":
+                s.set_value(get_val("notifications", "enabled", True))
+            elif s.name == "debug-logging":
+                s.set_value(get_val("logging", "debug", False))
+            elif s.name == "verbose-logging":
+                s.set_value(get_val("logging", "verbose", False))
 
-    def on_start_clicked(self, btn):
-        self.append_output("Starting hyprvoice daemon...")
-        try:
-            # Re-use Application.start_daemon if possible
-            app = self.get_transient_for().app
-            app.start_daemon()
-            self.append_output("Daemon start command issued.")
-        except Exception as e:
-            self.append_output(f"Failed to start: {e}")
+    def on_setting_changed(self, subsetting):
+        if self.loading:
+            return
 
-    def on_stop_clicked(self, btn):
-        self.run_command(["hyprvoice", "stop"])
-
-    def on_status_clicked(self, btn):
-        self.run_command(["hyprvoice", "status"])
-
-    def on_version_clicked(self, btn):
-        self.run_command(["hyprvoice", "version"])
-
-    def toggle_password_visibility(self, entry, icon_pos):
-        entry.set_visibility(not entry.get_visibility())
-
-    def on_save_clicked(self, btn):
         updates = {}
-
-        # Transcription
-        providers = ["openai", "groq-transcription", "groq-translation"]
-        updates["transcription"] = {
-            "provider": providers[self.provider_entry.get_selected()],
-            "api_key": self.api_key_entry.get_text(),
-            "language": self.language_entry.get_text(),
-            "model": self.model_entry.get_text()
-        }
-
-        # Recording
-        updates["recording"] = {
-            "timeout": self.timeout_entry.get_text()
-        }
-
-        # Injection
-        modes = ["fallback", "clipboard", "type"]
-        updates["injection"] = {
-            "mode": modes[self.mode_entry.get_selected()],
-            "restore_clipboard": self.restore_clipboard_switch.get_active()
-        }
-
-        # Notifications
-        updates["notifications"] = {
-            "enabled": self.notifications_switch.get_active()
-        }
-
-        # Logging
-        updates["logging"] = {
-            "debug": self.debug_logging_switch.get_active()
-        }
         
-        self.config_manager.save_config(updates)
-        self.close()
+        mapping = {
+            "provider": ("transcription", "provider"),
+            "openai-api-key": ("transcription", "openai_api_key"),
+            "openai-model": ("transcription", "openai_model"),
+            "groq-api-key": ("transcription", "groq_api_key"),
+            "groq-model": ("transcription", "groq_model"),
+            "language": ("transcription", "language"),
+            "timeout": ("recording", "timeout"),
+            "injection-mode": ("injection", "mode"),
+            "restore-clipboard": ("injection", "restore_clipboard"),
+            "notifications": ("notifications", "enabled"),
+            "debug-logging": ("logging", "debug"),
+            "verbose-logging": ("logging", "verbose")
+        }
+
+        if subsetting.name in mapping:
+            section, key = mapping[subsetting.name]
+            val = subsetting.get_value()
+
+            # Conversions
+            if subsetting.name == "provider":
+                p_list = ["openai", "groq-transcription", "groq-translation"]
+                val = p_list[val]
+            elif subsetting.name == "timeout":
+                val = f"{val}s"
+            elif subsetting.name == "injection-mode":
+                m_list = ["fallback", "clipboard", "type"]
+                val = m_list[val]
+            elif subsetting.name == "groq-model":
+                val = ["whisper-large-v3", "whisper-large-v3-turbo"][val]
+            elif subsetting.name == "openai-model":
+                val = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"][val]
+
+            if section not in updates: updates[section] = {}
+            updates[section][key] = val
+
+            # Sync logic for the main api_key and model used by the daemon
+            if "transcription" not in updates:
+                updates["transcription"] = {}
+
+            prov_idx = self.provider_setting.get_value()
+            prov = ["openai", "groq-transcription", "groq-translation"][prov_idx]
+            
+            if prov == "openai":
+                updates["transcription"]["api_key"] = self.openai_api_key.get_value()
+                o_idx = self.openai_model.get_value()
+                updates["transcription"]["model"] = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"][o_idx]
+            else:
+                updates["transcription"]["api_key"] = self.groq_api_key.get_value()
+                g_idx = self.groq_model.get_value()
+                updates["transcription"]["model"] = ["whisper-large-v3", "whisper-large-v3-turbo"][g_idx]
+
+            self.config_manager.save_config(updates)
+
+    def on_provider_changed(self, dropdown, pspec):
+        selected_index = dropdown.get_selected()
+        is_openai = (selected_index == 0)
+        is_groq = (selected_index in [1, 2])
+
+        self.openai_api_key.set_visible(is_openai)
+        self.openai_model.set_visible(is_openai)
+        self.groq_api_key.set_visible(is_groq)
+        self.groq_model.set_visible(is_groq)
+
+        self.on_setting_changed(self.provider_setting)
+
+class SettingsGroup(Gtk.Box):
+    def __init__(self, group_label, subsettings_list, *args, **kwargs):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, *args, **kwargs)
+        self.add_css_class("settings-group-container")
+        self.subsettings = subsettings_list
+
+        label = Gtk.Label(label=group_label)
+        label.set_name("settings-group-label")
+        label.set_halign(Gtk.Align.START)
+        self.append(label)
+
+        frame = Gtk.Frame()
+        frame.set_name("settings-group-frame")
+        
+        inner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        frame.set_child(inner_box)
+        self.append(frame)
+
+        for subsetting in subsettings_list:
+            inner_box.append(subsetting)
+
+class SubSettings(Gtk.Box):
+    __gsignals__ = {
+        'changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    def __init__(self, type, name, label=None, sublabel=None, separator=True, params=None, *args, **kwargs):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, *args, **kwargs)
+        self.add_css_class("subsettings-row")
+        self.name = name
+        self.type = type
+
+        top_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        top_box.add_css_class("subsettings-content")
+        top_box.set_valign(Gtk.Align.CENTER)
+        self.append(top_box)
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=False)
+        text_box.set_valign(Gtk.Align.CENTER)
+        top_box.append(text_box)
+
+        if label:
+            main_label = Gtk.Label(label=label, xalign=0)
+            text_box.append(main_label)
+        
+        if sublabel:
+            desc_label = Gtk.Label(label=sublabel, xalign=0)
+            desc_label.add_css_class("settings-sub-label")
+            desc_label.set_wrap(True)
+            desc_label.set_max_width_chars(45)
+            text_box.append(desc_label)
+
+        if type == "switch":
+            self.widget = Gtk.Switch()
+            self.widget.set_valign(Gtk.Align.CENTER)
+            self.widget.set_halign(Gtk.Align.END)
+            self.widget.set_hexpand(True)
+            self.widget.connect("notify::active", lambda w, p: self.emit("changed"))
+            top_box.append(self.widget)
+
+        elif type == "entry":
+            self.widget = Gtk.Entry()
+            self.widget.set_valign(Gtk.Align.CENTER)
+            self.widget.set_hexpand(True)
+            self.widget.set_margin_start(12)
+            self.widget.connect("changed", lambda w: self.emit("changed"))
+            top_box.append(self.widget)
+
+        elif type == "dropdown":
+            self.dropdown = Gtk.DropDown.new_from_strings(params[0])
+            self.dropdown.set_valign(Gtk.Align.CENTER)
+            self.dropdown.set_halign(Gtk.Align.END)
+            self.dropdown.set_hexpand(True)
+            self.dropdown.connect("notify::selected", lambda w, p: self.emit("changed"))
+            top_box.append(self.dropdown)
+
+        elif type == "spinbutton":
+            adj = Gtk.Adjustment.new(10, params[0], params[1], params[2], 10, 0)
+            self.widget = Gtk.SpinButton.new(adj, 1.0, 0)
+            self.widget.set_valign(Gtk.Align.CENTER)
+            self.widget.set_halign(Gtk.Align.END)
+            self.widget.set_hexpand(True)
+            self.widget.set_size_request(-1, 42)
+            self.widget.connect("value-changed", lambda w: self.emit("changed"))
+            top_box.append(self.widget)
+
+        elif type == "checkbutton":
+            self.widget = Gtk.CheckButton(label=params[0] if params else "")
+            self.widget.set_valign(Gtk.Align.CENTER)
+            self.widget.set_halign(Gtk.Align.END)
+            self.widget.set_hexpand(True)
+            self.widget.connect("toggled", lambda w: self.emit("changed"))
+            top_box.append(self.widget)
+
+        if separator:
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            self.append(sep)
+
+    def get_value(self):
+        if self.type == "switch":
+            return self.widget.get_active()
+        elif self.type == "entry":
+            return self.widget.get_text()
+        elif self.type == "dropdown":
+            return self.dropdown.get_selected()
+        elif self.type == "spinbutton":
+            return int(self.widget.get_value())
+        elif self.type == "checkbutton":
+            return self.widget.get_active()
+        return None
+
+    def set_value(self, value):
+        if self.type == "switch":
+            self.widget.set_active(bool(value))
+        elif self.type == "entry":
+            self.widget.set_text(str(value or ""))
+        elif self.type == "dropdown":
+            self.dropdown.set_selected(int(value or 0))
+        elif self.type == "spinbutton":
+            self.widget.set_value(float(value or 0))
+        elif self.type == "checkbutton":
+            self.widget.set_active(bool(value))
