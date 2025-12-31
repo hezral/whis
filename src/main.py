@@ -19,6 +19,7 @@ from gi.repository import Gtk, Gio, Granite, Gdk, GLib, Gst
 from .window import whisWindow
 from .config_manager import ConfigManager
 from .logging_utils import set_verbose_logging, log_function_calls
+from .clipboard_utils import ClipboardUtils
 
 
 class Application(Gtk.Application):
@@ -33,13 +34,34 @@ class Application(Gtk.Application):
                          flags=Gio.ApplicationFlags.FLAGS_NONE | Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.hyprvoice_process = None
         self.window = None
+        self.clipboard_utils = ClipboardUtils()
 
     def _log_pipe(self, pipe, prefix):
         """Reads lines from a pipe and logs them."""
         with pipe:
             for line in iter(pipe.readline, ""):
                 if line:
-                    logging.debug(f"hyprvoice: {line.strip()}")
+                    message = line.strip()
+                    logging.debug(f"hyprvoice: {message}")
+                    if "Text injection completed successfully" in message:
+                        logging.info("Hyprvoice completion detected, triggering autotype and exit.")
+                        GLib.idle_add(self._trigger_autotype_and_exit)
+
+    def _trigger_autotype_and_exit(self):
+        """Hides the window, waits for focus shift, and performs Ctrl+V then exits."""
+        if self.window:
+            self.window.hide()
+        
+        # Wait 1 second before Ctrl+V
+        GLib.timeout_add(1000, self._perform_ctrl_v_and_exit)
+        return False
+
+    def _perform_ctrl_v_and_exit(self):
+        """Performs the Ctrl+V simulation and quits the application."""
+        self.clipboard_utils.simulate_ctrl_v()
+        logging.info("Autotype completed, quitting Whis.")
+        self.quit()
+        return False
 
     @log_function_calls
     def do_activate(self):
@@ -126,11 +148,17 @@ class Application(Gtk.Application):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self.quit)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self.quit)
         
-        # Support quiting app using Super+Q
+        # Support quiting app using Ctrl+Q
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", self.on_quit_action)
         self.add_action(quit_action)
         self.set_accels_for_action("app.quit", ["<Ctrl>Q", "Escape"])
+
+        # Support toggling hyprvoice using Ctrl+T
+        toggle_action = Gio.SimpleAction.new("toggle_hyprvoice", None)
+        toggle_action.connect("activate", self.on_toggle_hyprvoice_action)
+        self.add_action(toggle_action)
+        self.set_accels_for_action("app.toggle_hyprvoice", ["<Ctrl>T"])
 
         prefers_color_scheme = self.granite_settings.get_prefers_color_scheme()
         self.gtk_settings.set_property("gtk-application-prefer-dark-theme", prefers_color_scheme)
@@ -189,6 +217,13 @@ class Application(Gtk.Application):
     def on_quit_action(self, action, param):
         logging.info("on_quit_action triggered.")
         self.quit()
+
+    def on_toggle_hyprvoice_action(self, action, param):
+        logging.info("on_toggle_hyprvoice_action triggered.")
+        self.activate()
+        if self.window:
+            self.window.toggle_recording()
+            self.window.present()
         
     @log_function_calls
     def do_shutdown(self):

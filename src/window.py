@@ -24,7 +24,9 @@ class whisWindow(Gtk.ApplicationWindow):
         self.app = self.props.application
 
         # UI State
-        self.levels = [0.05] * 15
+        self.num_bars = 20 # Reverted to 20 as requested
+        self.levels = [0.05] * self.num_bars
+        self.bar_weights = [random.uniform(0.3, 1.0) for _ in range(self.num_bars)]
         self.last_audio_level = 0.0
         self.pipeline = None
         self.level_history = [-100.0] * 50
@@ -39,32 +41,40 @@ class whisWindow(Gtk.ApplicationWindow):
         self.set_title("Whis")
         self.set_icon_name(self.app.app_id)
         self.set_decorated(False)
-        self.set_resizable(True)
         self.set_name("pill-window")
         self.set_default_size(100, 24)
-
+        self.set_size_request(100, 24)
+        self.set_resizable(True)
+        self.set_valign(Gtk.Align.START)
 
         # Main Layout
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.main_box.set_size_request(96, -1)
+        self.main_box.set_hexpand(False)
+        self.main_box.set_halign(Gtk.Align.CENTER)
         
         # Soundwave Handle
         self.canvas = Gtk.DrawingArea()
         self.canvas.set_draw_func(self.on_draw)
-        self.canvas.set_size_request(-1, 24)
+        self.canvas.set_size_request(96, 20)
         self.handle = Gtk.WindowHandle()
         self.handle.set_child(self.canvas)
+        self.handle.set_vexpand(False)
+        self.handle.set_valign(Gtk.Align.START)
         self.main_box.append(self.handle)
 
         # Bottom Drawer (Buttons)
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
-        self.revealer.set_transition_duration(300)
+        self.revealer.set_transition_duration(150)
         self.revealer.set_visible(False)
 
         self.btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.btn_box.set_halign(Gtk.Align.CENTER)
         self.btn_box.set_valign(Gtk.Align.CENTER)
+        self.btn_box.set_hexpand(False)
         self.btn_box.set_margin_bottom(4)
+        self.btn_box.set_visible(False)
 
         # Buttons
         # 1. Close
@@ -163,34 +173,37 @@ class whisWindow(Gtk.ApplicationWindow):
 
     def update_animation(self):
         if abs(self.target_height - self.current_height) > 0.5:
-            self.current_height += (self.target_height - self.current_height) * 0.2
-            self.set_default_size(100, int(self.current_height))
-            self.set_default_size(100, 24)
+            self.current_height += (self.target_height - self.current_height) * 0.4
+            h = int(self.current_height)
+            self.set_size_request(100, h)
+            # Content height is window height minus 4px border (2px top + 2px bottom)
+            content_h = max(0, h - 4)
+            self.main_box.set_size_request(96, content_h)
             self.canvas.queue_draw()
 
-        self.levels.pop(0)
-        jitter = random.uniform(0.01, 0.03)
-        new_val = (self.last_audio_level * 0.9) + jitter
-        self.levels.append(new_val)
+        for i in range(self.num_bars):
+            # Shift bar weights slightly for organic movement
+            self.bar_weights[i] = max(0.2, min(1.0, self.bar_weights[i] + random.uniform(-0.05, 0.05)))
+            
+            # Use audio level + individual weight + jitter
+            jitter = random.uniform(0.8, 1.2)
+            target = (self.last_audio_level * self.bar_weights[i] * jitter) + 0.05
+            
+            # Smoothing
+            self.levels[i] = self.levels[i] * 0.3 + target * 0.7
+            
         self.canvas.queue_draw()
         return True
 
     def on_draw(self, drawing_area, cr, width, height):
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
-        thickness, gap, margin = 2, 2, 5
-        usable_width = width - 2 * margin
-        usable_height = height - 2 * margin
-        num_bars = int((usable_width + gap) // (thickness + gap))
+        thickness, gap, margin_y = 2, 2, 3
+        usable_height = height - 2 * margin_y
         
-        if len(self.levels) != num_bars:
-            if len(self.levels) < num_bars:
-                self.levels = [0.05] * (num_bars - len(self.levels)) + self.levels
-            else:
-                self.levels = self.levels[-num_bars:]
-
+        num_bars = len(self.levels)
         total_bars_width = (num_bars * thickness) + ((num_bars - 1) * gap)
-        start_x = margin + (usable_width - total_bars_width) / 2
+        start_x = (width - total_bars_width) / 2
         mid_y = height / 2
 
         for i, level in enumerate(self.levels):
@@ -208,6 +221,7 @@ class whisWindow(Gtk.ApplicationWindow):
         self.target_height = 48
         self.revealer.set_visible(True)
         self.revealer.set_reveal_child(True)
+        self.btn_box.set_visible(True)
 
     def on_close_request(self, btn):
         self.close()
@@ -219,6 +233,7 @@ class whisWindow(Gtk.ApplicationWindow):
             self.target_height = 24
             self.revealer.set_reveal_child(False)
             self.revealer.set_visible(False)
+            self.btn_box.set_visible(False)
 
     @log_function_calls
     def on_record_clicked(self, btn):

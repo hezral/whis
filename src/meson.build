@@ -25,7 +25,8 @@ whis_sources = [
   'mode_switch.py',
   'config_manager.py',
   'preferences.py',
-  'logging_utils.py'
+  'logging_utils.py',
+  'clipboard_utils.py'
 ]
 
 

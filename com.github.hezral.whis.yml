@@ -7,12 +7,13 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --share=network
-  - --device=dri # GPU/DRI access 
+  - --device=dri # GPU/DRI access
   - --env=LIBGL_ALWAYS_SOFTWARE=1 #force software rendering if GPU fails
   - --env=GTK_IM_MODULE=gtk-im-context-simple
   - --socket=pulseaudio
-  - --talk-name=org.freedesktop.IBus
+  - --socket=session-bus  # Required for DBus access
   - --filesystem=xdg-run/pipewire-0
+
 
 modules:
   - name: wl-clipboard
@@ -29,19 +30,6 @@ modules:
     sources:
       - type: git
         url: https://github.com/atx/wtype.git
-
-  # - name: ydotool
-  #   buildsystem: cmake
-  #   build-options:
-  #     config-opts:
-  #       - -DBUILD_DOCS=OFF
-  #   sources:
-  #     - type: git
-  #       url: https://github.com/ReimuNotMoe/ydotool.git
-  #       tag: v1.0.4
-  #     - type: shell
-  #       commands:
-  #         - sed -i 's/add_subdirectory(manpage)//' CMakeLists.txt
 
   - name: golang
     buildsystem: simple
